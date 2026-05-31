@@ -47,7 +47,7 @@ function readConfig() {
   return {
     ...DEFAULT_CONFIG,
     ...parsed,
-    developmentGuildId: parsed.developmentGuildId || parsed.guildId || "",
+    developmentGuildId: parsed.developmentGuildId || "",
     links: {
       ...DEFAULT_CONFIG.links,
       ...(parsed.links || {})

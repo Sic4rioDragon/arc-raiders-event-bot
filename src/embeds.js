@@ -5,6 +5,9 @@ import {
   EmbedBuilder
 } from "discord.js";
 
+const BOT_FOOTER = "Arc Raiders Event Bot by Sic4rioDragon";
+const SUPPORT_INVITE = "https://discord.gg/gaJzGPSkZu";
+
 function unix(date) {
   return Math.floor(date.getTime() / 1000);
 }
@@ -75,10 +78,7 @@ export function buildBoardPayload(events) {
     .setTitle(active.length ? "Future Events" : "ARC Raiders Events")
     .setDescription(futureLines.join("\n"))
     .setFooter({
-      text: `Auto-updated • Today at ${new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      })} • Data: MetaForge`
+      text: `Auto updates • ${BOT_FOOTER}`
     });
 
   embeds.push(futureEmbed);
@@ -102,7 +102,6 @@ export function buildBoardPayload(events) {
 
 export function buildAlertPayload(event, watch) {
   const roleText = watch.roleId ? `<@&${watch.roleId}> ` : "";
-
   const isActive = event.active || event.startMs <= Date.now();
 
   const title = isActive
@@ -118,7 +117,7 @@ export function buildAlertPayload(event, watch) {
       `**Ends:** <t:${unix(event.end)}:R> · <t:${unix(event.end)}:t>\n\n` +
       `Watch: \`${watch.event}\`${watch.map && watch.map !== "ANY" ? ` on \`${watch.map}\`` : ""}`
     )
-    .setFooter({ text: "ARC Raiders Event Tracker • Data: MetaForge" });
+    .setFooter({ text: BOT_FOOTER });
 
   if (event.icon && String(event.icon).startsWith("http")) {
     embed.setThumbnail(event.icon);
@@ -131,4 +130,46 @@ export function buildAlertPayload(event, watch) {
       ? { roles: [watch.roleId] }
       : { parse: [] }
   };
+}
+
+export function buildHelpPayload() {
+  const embed = new EmbedBuilder()
+    .setColor(0x57c785)
+    .setTitle("ARC Raiders Event Bot")
+    .setDescription(
+      "Made by **Sic4rioDragon**.\n\n" +
+      "Get alerts for ARC Raiders events before they start."
+    )
+    .addFields(
+      {
+        name: "Personal alerts",
+        value:
+          "`/notify` - add a DM alert\n" +
+          "`/mynotifications` - view your alerts\n" +
+          "`/arcnotify remove` - remove one alert\n" +
+          "`/arcnotify clear` - remove all your alerts\n" +
+          "`/arcnotify test` - test if DMs work"
+      },
+      {
+        name: "Events",
+        value:
+          "`/events` - show current and upcoming events\n" +
+          "`/map` - show events for one map"
+      },
+      {
+        name: "Server admin setup",
+        value:
+          "`/arcsetup` - set the event board channel\n" +
+          "`/arcwatch add` - add server alerts\n" +
+          "`/arcwatch list` - view server alerts\n" +
+          "`/arcrefresh` - refresh the board"
+      },
+      {
+        name: "Support",
+        value: `[Join the support server](${SUPPORT_INVITE})`
+      }
+    )
+    .setFooter({ text: BOT_FOOTER });
+
+  return { embeds: [embed], components: [] };
 }

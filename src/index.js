@@ -15,6 +15,7 @@ import { CFG, requireConfigValue } from "./config.js";
 import {
   cleanupOldAlerts,
   getGuildState,
+  getUserState,
   loadState,
   saveState
 } from "./store.js";
@@ -28,14 +29,48 @@ import {
 
 import {
   buildAlertPayload,
-  buildBoardPayload
+  buildBoardPayload,
+  buildHelpPayload
 } from "./embeds.js";
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = CFG.clientId;
-const DEVELOPMENT_GUILD_ID = CFG.developmentGuildId || CFG.guildId || null;
+const DEVELOPMENT_GUILD_ID = CFG.developmentGuildId || null;
 const POLL_SECONDS = Math.max(30, Number(CFG.pollSeconds || 60));
 const DEFAULT_ALERT_MINUTES = Number(CFG.defaultAlertMinutes ?? 15);
+
+const IntegrationType = {
+  GuildInstall: 0,
+  UserInstall: 1
+};
+
+const ContextType = {
+  Guild: 0,
+  BotDM: 1,
+  PrivateChannel: 2
+};
+
+const DEFAULT_MAPS = [
+  "Dam Battlegrounds",
+  "Spaceport",
+  "Buried City",
+  "Blue Gate",
+  "Stella Montis",
+  "Riven Tides"
+];
+
+const DEFAULT_EVENTS = [
+  "Lush Blooms",
+  "Electromagnetic Storm",
+  "Hurricane",
+  "Night Raid",
+  "Matriarch",
+  "Harvester",
+  "Uncovered Caches",
+  "Husk Graveyard",
+  "Beachcombing",
+  "Close Scrutiny"
+];
 
 if (!TOKEN) {
   console.error("Missing DISCORD_TOKEN in .env");
@@ -53,11 +88,13 @@ const client = new Client({
 });
 
 function mapChoices() {
+  const maps = Array.isArray(CFG.maps) && CFG.maps.length ? CFG.maps : DEFAULT_MAPS;
+
   const choices = [
     { name: "Any map", value: "ANY" }
   ];
 
-  for (const map of CFG.maps || []) {
+  for (const map of maps) {
     choices.push({
       name: String(map).slice(0, 100),
       value: String(map).slice(0, 100)
@@ -68,10 +105,12 @@ function mapChoices() {
 }
 
 function allKnownEventNames() {
-  const names = new Set();
+  const names = new Set(DEFAULT_EVENTS);
 
-  for (const event of CFG.events || []) {
-    if (event) names.add(String(event));
+  if (Array.isArray(CFG.events)) {
+    for (const event of CFG.events) {
+      if (event) names.add(String(event));
+    }
   }
 
   for (const event of getKnownEventNames()) {
@@ -83,8 +122,8 @@ function allKnownEventNames() {
 
 function eventAutocompleteChoices(searchText) {
   const query = normalizeKey(searchText || "");
-
   const all = allKnownEventNames();
+
   const filtered = query
     ? all.filter(name => normalizeKey(name).includes(query))
     : all;
@@ -95,13 +134,63 @@ function eventAutocompleteChoices(searchText) {
   }));
 }
 
-function adminOnly(command) {
-  return command.setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
+function minuteChoices() {
+  return [
+    { name: "Active now", value: 0 },
+    { name: "5 minutes before", value: 5 },
+    { name: "10 minutes before", value: 10 },
+    { name: "15 minutes before", value: 15 },
+    { name: "30 minutes before", value: 30 },
+    { name: "60 minutes before", value: 60 }
+  ];
+}
+
+function addEventOption(command) {
+  return command.addStringOption(opt =>
+    opt
+      .setName("event")
+      .setDescription("Start typing to search events, for example Lush Blooms.")
+      .setRequired(true)
+      .setAutocomplete(true)
+  );
+}
+
+function addMapOption(command, description = "Limit this alert to one map.") {
+  return command.addStringOption(opt =>
+    opt
+      .setName("map")
+      .setDescription(description)
+      .setRequired(false)
+      .addChoices(...mapChoices())
+  );
+}
+
+function addMinutesOption(command) {
+  return command.addIntegerOption(opt =>
+    opt
+      .setName("minutes")
+      .setDescription("Notify this many minutes before start. Use 0 for active-now alerts.")
+      .setRequired(false)
+      .addChoices(...minuteChoices())
+  );
+}
+
+function guildOnlyAdmin(command) {
+  return command
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setIntegrationTypes(IntegrationType.GuildInstall)
+    .setContexts(ContextType.Guild);
+}
+
+function personalCommand(command) {
+  return command
+    .setIntegrationTypes(IntegrationType.GuildInstall, IntegrationType.UserInstall)
+    .setContexts(ContextType.Guild, ContextType.BotDM, ContextType.PrivateChannel);
 }
 
 function commandsJson() {
   return [
-    adminOnly(
+    guildOnlyAdmin(
       new SlashCommandBuilder()
         .setName("arcsetup")
         .setDescription("Set the channel where the ARC Raiders event board and alerts go.")
@@ -114,53 +203,30 @@ function commandsJson() {
         )
     ),
 
-    adminOnly(
+    guildOnlyAdmin(
       new SlashCommandBuilder()
         .setName("arcwatch")
-        .setDescription("Configure specific ARC Raiders event alerts.")
-        .addSubcommand(sub =>
-          sub
+        .setDescription("Configure server ARC Raiders event alerts.")
+        .addSubcommand(sub => {
+          let cmd = sub
             .setName("add")
-            .setDescription("Add a specific event watch.")
-            .addStringOption(opt =>
-              opt
-                .setName("event")
-                .setDescription("Start typing to search events, for example Lush Blooms.")
-                .setRequired(true)
-                .setAutocomplete(true)
-            )
-            .addStringOption(opt =>
-              opt
-                .setName("map")
-                .setDescription("Limit this watch to one map.")
-                .setRequired(false)
-                .addChoices(...mapChoices())
-            )
-            .addIntegerOption(opt =>
-              opt
-                .setName("minutes")
-                .setDescription("Notify this many minutes before start. Use 0 for active-now alerts.")
-                .setRequired(false)
-                .addChoices(
-                  { name: "Active now", value: 0 },
-                  { name: "5 minutes before", value: 5 },
-                  { name: "10 minutes before", value: 10 },
-                  { name: "15 minutes before", value: 15 },
-                  { name: "30 minutes before", value: 30 },
-                  { name: "60 minutes before", value: 60 }
-                )
-            )
-            .addRoleOption(opt =>
-              opt
-                .setName("role")
-                .setDescription("Optional role to ping.")
-                .setRequired(false)
-            )
-        )
+            .setDescription("Add a server event watch.");
+
+          cmd = addEventOption(cmd);
+          cmd = addMapOption(cmd, "Limit this watch to one map.");
+          cmd = addMinutesOption(cmd);
+
+          return cmd.addRoleOption(opt =>
+            opt
+              .setName("role")
+              .setDescription("Optional role to ping.")
+              .setRequired(false)
+          );
+        })
         .addSubcommand(sub =>
           sub
             .setName("remove")
-            .setDescription("Remove a watch by ID.")
+            .setDescription("Remove a server watch by ID.")
             .addIntegerOption(opt =>
               opt
                 .setName("id")
@@ -171,11 +237,136 @@ function commandsJson() {
         .addSubcommand(sub =>
           sub
             .setName("list")
-            .setDescription("List configured watches.")
+            .setDescription("List configured server watches.")
         )
     ),
 
-    adminOnly(
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("notify")
+        .setDescription("Add a personal ARC Raiders DM alert.")
+        .addStringOption(opt =>
+          opt
+            .setName("event")
+            .setDescription("Start typing to search events, for example Lush Blooms.")
+            .setRequired(true)
+            .setAutocomplete(true)
+        )
+        .addStringOption(opt =>
+          opt
+            .setName("map")
+            .setDescription("Optional map filter.")
+            .setRequired(false)
+            .addChoices(...mapChoices())
+        )
+        .addIntegerOption(opt =>
+          opt
+            .setName("minutes")
+            .setDescription("Notify this many minutes before start. Use 0 for active-now alerts.")
+            .setRequired(false)
+            .addChoices(...minuteChoices())
+        )
+    ),
+
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("mynotifications")
+        .setDescription("View your personal ARC Raiders DM alerts.")
+    ),
+
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("events")
+        .setDescription("Show current and upcoming ARC Raiders events.")
+        .addStringOption(opt =>
+          opt
+            .setName("event")
+            .setDescription("Optional event filter.")
+            .setRequired(false)
+            .setAutocomplete(true)
+        )
+        .addStringOption(opt =>
+          opt
+            .setName("map")
+            .setDescription("Optional map filter.")
+            .setRequired(false)
+            .addChoices(...mapChoices())
+        )
+        .addBooleanOption(opt =>
+          opt
+            .setName("private")
+            .setDescription("Only show the result to you. Server-only option.")
+            .setRequired(false)
+        )
+    ),
+
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("map")
+        .setDescription("Show ARC Raiders events for a specific map.")
+        .addStringOption(opt =>
+          opt
+            .setName("map")
+            .setDescription("Map to show.")
+            .setRequired(true)
+            .addChoices(...mapChoices().filter(choice => choice.value !== "ANY"))
+        )
+        .addBooleanOption(opt =>
+          opt
+            .setName("private")
+            .setDescription("Only show the result to you. Server-only option.")
+            .setRequired(false)
+        )
+    ),
+
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("help")
+        .setDescription("Show ARC Raiders Event Bot commands.")
+    ),
+
+    personalCommand(
+      new SlashCommandBuilder()
+        .setName("arcnotify")
+        .setDescription("Manage your personal ARC Raiders DM alerts.")
+        .addSubcommand(sub => {
+          let cmd = sub
+            .setName("add")
+            .setDescription("Add a personal DM alert.");
+
+          cmd = addEventOption(cmd);
+          cmd = addMapOption(cmd);
+          return addMinutesOption(cmd);
+        })
+        .addSubcommand(sub =>
+          sub
+            .setName("remove")
+            .setDescription("Remove one of your personal alerts by ID.")
+            .addIntegerOption(opt =>
+              opt
+                .setName("id")
+                .setDescription("Alert ID from /arcnotify list")
+                .setRequired(true)
+            )
+        )
+        .addSubcommand(sub =>
+          sub
+            .setName("clear")
+            .setDescription("Remove all of your personal alerts.")
+        )
+        .addSubcommand(sub =>
+          sub
+            .setName("list")
+            .setDescription("List your personal DM alerts.")
+        )
+        .addSubcommand(sub =>
+          sub
+            .setName("test")
+            .setDescription("Send yourself a test DM.")
+        )
+    ),
+
+    personalCommand(
       new SlashCommandBuilder()
         .setName("arcevents")
         .setDescription("Show current and upcoming ARC Raiders events.")
@@ -196,15 +387,15 @@ function commandsJson() {
         .addBooleanOption(opt =>
           opt
             .setName("private")
-            .setDescription("Only show the result to you.")
+            .setDescription("Only show the result to you. Server-only option.")
             .setRequired(false)
         )
     ),
 
-    adminOnly(
+    guildOnlyAdmin(
       new SlashCommandBuilder()
         .setName("arcrefresh")
-        .setDescription("Force refresh the ARC Raiders event board.")
+        .setDescription("Force refresh the server ARC Raiders event board.")
     )
   ].map(cmd => cmd.toJSON());
 }
@@ -230,6 +421,10 @@ async function registerCommands() {
   console.log("Registered global commands");
 }
 
+function isAdminCommandName(commandName) {
+  return ["arcsetup", "arcwatch", "arcrefresh"].includes(commandName);
+}
+
 function interactionIsAdmin(interaction) {
   return Boolean(
     interaction.inGuild() &&
@@ -240,7 +435,7 @@ function interactionIsAdmin(interaction) {
 async function requireAdmin(interaction) {
   if (interactionIsAdmin(interaction)) return true;
 
-  const content = "Only server administrators can use this bot.";
+  const content = "Only server administrators can use this command.";
 
   if (interaction.isAutocomplete()) {
     await interaction.respond([]).catch(() => {});
@@ -254,6 +449,11 @@ async function requireAdmin(interaction) {
   }
 
   return false;
+}
+
+function privateReplyPayload(interaction, payload) {
+  if (!interaction.inGuild()) return payload;
+  return { ...payload, ephemeral: true };
 }
 
 async function getConfiguredChannel(guildId) {
@@ -301,7 +501,18 @@ function makeAlertKey(watch, event) {
   ].join("|");
 }
 
-async function checkAlerts(guildId, events) {
+function shouldSendForWatch(watch, event) {
+  const minutes = Number(watch.minutes || 0);
+  const now = Date.now();
+
+  if (minutes === 0) {
+    return event.startMs <= now && now < event.endMs;
+  }
+
+  return event.startMs > now && event.startMs - now <= minutes * 60_000;
+}
+
+async function checkServerAlerts(guildId, events) {
   const guildState = getGuildState(state, guildId);
   const channel = await getConfiguredChannel(guildId);
   if (!channel) return;
@@ -314,20 +525,41 @@ async function checkAlerts(guildId, events) {
     for (const event of matches) {
       const alertKey = makeAlertKey(watch, event);
       if (guildState.sentAlerts[alertKey]) continue;
-
-      const minutes = Number(watch.minutes || 0);
-      const now = Date.now();
-
-      const shouldSend =
-        minutes === 0
-          ? event.startMs <= now && now < event.endMs
-          : event.startMs > now && event.startMs - now <= minutes * 60_000;
-
-      if (!shouldSend) continue;
+      if (!shouldSendForWatch(watch, event)) continue;
 
       await channel.send(buildAlertPayload(event, watch));
       guildState.sentAlerts[alertKey] = Date.now();
       saveState(state);
+    }
+  }
+}
+
+async function checkPersonalAlerts(events) {
+  for (const [userId, userState] of Object.entries(state.users || {})) {
+    cleanupOldAlerts(userState);
+
+    for (const watch of userState.watches || []) {
+      const matches = events.filter(event => eventMatchesWatch(event, watch));
+
+      for (const event of matches) {
+        const alertKey = makeAlertKey(watch, event);
+        if (userState.sentAlerts[alertKey]) continue;
+        if (!shouldSendForWatch(watch, event)) continue;
+
+        try {
+          const user = await client.users.fetch(userId);
+          await user.send(buildAlertPayload(event, { ...watch, roleId: null }));
+          userState.dmFailures = 0;
+          userState.lastDmFailureAt = null;
+        } catch (err) {
+          userState.dmFailures = Number(userState.dmFailures || 0) + 1;
+          userState.lastDmFailureAt = Date.now();
+          console.log(`[dm] Failed to send alert to ${userId}: ${err.message}`);
+        }
+
+        userState.sentAlerts[alertKey] = Date.now();
+        saveState(state);
+      }
     }
   }
 }
@@ -342,13 +574,19 @@ async function pollOnce(reason = "timer") {
     return;
   }
 
-  for (const guildId of Object.keys(state.guilds)) {
+  for (const guildId of Object.keys(state.guilds || {})) {
     try {
       await updateBoard(guildId, events);
-      await checkAlerts(guildId, events);
+      await checkServerAlerts(guildId, events);
     } catch (err) {
       console.log(`[poll:${reason}] Guild ${guildId} failed:`, err.message);
     }
+  }
+
+  try {
+    await checkPersonalAlerts(events);
+  } catch (err) {
+    console.log(`[poll:${reason}] Personal alerts failed:`, err.message);
   }
 }
 
@@ -366,9 +604,9 @@ function filterEvents(events, eventName, mapName) {
   });
 }
 
-function formatWatchList(guildState) {
+function formatServerWatchList(guildState) {
   if (!guildState.watches.length) {
-    return "No event watches configured yet.";
+    return "No server event watches configured yet.";
   }
 
   return guildState.watches
@@ -386,10 +624,144 @@ function formatWatchList(guildState) {
     .join("\n");
 }
 
+function formatPersonalWatchList(userState) {
+  if (!userState.watches.length) {
+    return "You do not have any personal ARC Raiders DM alerts yet. Use `/notify` to add one.";
+  }
+
+  return userState.watches
+    .map(watch => {
+      const map = watch.map && watch.map !== "ANY"
+        ? ` on **${watch.map}**`
+        : " on **Any map**";
+
+      const mins = Number(watch.minutes || 0);
+      const timing = mins === 0 ? "active-now" : `${mins} min before`;
+
+      return `**#${watch.id}** — **${watch.event}**${map} · ${timing}`;
+    })
+    .join("\n");
+}
+
+function addPersonalWatch(interaction, userState) {
+  const event = interaction.options.getString("event", true).trim();
+  const map = interaction.options.getString("map") || "ANY";
+  const minutes = interaction.options.getInteger("minutes") ?? DEFAULT_ALERT_MINUTES;
+
+  const watch = {
+    id: userState.nextWatchId++,
+    event,
+    map,
+    minutes,
+    createdAt: Date.now()
+  };
+
+  userState.watches.push(watch);
+  saveState(state);
+
+  return watch;
+}
+
+async function replyPersonalWatchAdded(interaction, watch) {
+  await interaction.reply(privateReplyPayload(interaction, {
+    content:
+      `Added personal DM alert **#${watch.id}** for **${watch.event}**` +
+      `${watch.map !== "ANY" ? ` on **${watch.map}**` : " on **Any map**"} ` +
+      `(${watch.minutes === 0 ? "active-now" : `${watch.minutes} min before`}).\n\n` +
+      "Run `/arcnotify test` once to make sure I can DM you."
+  }));
+}
+
+async function handleArcNotify(interaction) {
+  const sub = interaction.options.getSubcommand();
+  const userState = getUserState(state, interaction.user.id);
+
+  if (sub === "add") {
+    const watch = addPersonalWatch(interaction, userState);
+    await replyPersonalWatchAdded(interaction, watch);
+    return;
+  }
+
+  if (sub === "remove") {
+    const id = interaction.options.getInteger("id", true);
+    const before = userState.watches.length;
+
+    userState.watches = userState.watches.filter(w => w.id !== id);
+    saveState(state);
+
+    await interaction.reply(privateReplyPayload(interaction, {
+      content: before === userState.watches.length
+        ? `No personal alert found with ID **#${id}**.`
+        : `Removed personal alert **#${id}**.`
+    }));
+
+    return;
+  }
+
+  if (sub === "clear") {
+    const count = userState.watches.length;
+    userState.watches = [];
+    userState.sentAlerts = {};
+    saveState(state);
+
+    await interaction.reply(privateReplyPayload(interaction, {
+      content: count
+        ? `Removed **${count}** personal alert${count === 1 ? "" : "s"}.`
+        : "You had no personal alerts to remove."
+    }));
+
+    return;
+  }
+
+  if (sub === "list") {
+    await interaction.reply(privateReplyPayload(interaction, {
+      content: formatPersonalWatchList(userState)
+    }));
+
+    return;
+  }
+
+  if (sub === "test") {
+    try {
+      await interaction.user.send("ARC Raiders Event Bot test DM. If you got this, personal alerts should work.");
+      userState.dmFailures = 0;
+      userState.lastDmFailureAt = null;
+      saveState(state);
+
+      await interaction.reply(privateReplyPayload(interaction, {
+        content: "Test DM sent. Personal alerts should work."
+      }));
+    } catch {
+      userState.dmFailures = Number(userState.dmFailures || 0) + 1;
+      userState.lastDmFailureAt = Date.now();
+      saveState(state);
+
+      await interaction.reply(privateReplyPayload(interaction, {
+        content:
+          "I could not DM you. Check your Discord privacy settings, or use the bot in a shared server/DM where Discord allows bot messages."
+      }));
+    }
+  }
+}
+
+async function showEvents(interaction, mapOverride = null) {
+  const privateReply = interaction.inGuild()
+    ? interaction.options.getBoolean("private") ?? false
+    : false;
+
+  const eventFilter = interaction.options.getString("event") || null;
+  const mapFilter = mapOverride || interaction.options.getString("map") || null;
+
+  await interaction.deferReply({ ephemeral: privateReply });
+
+  const events = filterEvents(await getEvents(), eventFilter, mapFilter);
+  await interaction.editReply(buildBoardPayload(events));
+}
+
 client.on("interactionCreate", async interaction => {
   try {
     if (interaction.isAutocomplete()) {
-      if (!await requireAdmin(interaction)) return;
+      if (isAdminCommandName(interaction.commandName) && !await requireAdmin(interaction)) return;
 
       const focused = interaction.options.getFocused(true);
 
@@ -402,19 +774,63 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isButton()) {
       if (interaction.customId !== "arc_refresh") return;
-      if (!await requireAdmin(interaction)) return;
-
-      await interaction.deferReply({ ephemeral: true });
 
       const events = await getEvents();
-      await updateBoard(interaction.guildId, events);
 
-      await interaction.editReply("Refreshed the ARC Raiders event board.");
+      const isServerBoard = Boolean(
+        interaction.guildId &&
+        getGuildState(state, interaction.guildId).boardMessageId === interaction.message?.id
+      );
+
+      if (isServerBoard) {
+        if (!await requireAdmin(interaction)) return;
+
+        await interaction.deferReply({ ephemeral: true });
+        await updateBoard(interaction.guildId, events);
+        await interaction.editReply("Refreshed the ARC Raiders event board.");
+        return;
+      }
+
+      await interaction.update(buildBoardPayload(events));
       return;
     }
 
     if (!interaction.isChatInputCommand()) return;
-    if (!await requireAdmin(interaction)) return;
+
+    if (isAdminCommandName(interaction.commandName) && !await requireAdmin(interaction)) {
+      return;
+    }
+
+    if (interaction.commandName === "help") {
+      await interaction.reply(privateReplyPayload(interaction, buildHelpPayload()));
+      return;
+    }
+
+    if (interaction.commandName === "notify") {
+      const userState = getUserState(state, interaction.user.id);
+      const watch = addPersonalWatch(interaction, userState);
+      await replyPersonalWatchAdded(interaction, watch);
+      return;
+    }
+
+    if (interaction.commandName === "mynotifications") {
+      const userState = getUserState(state, interaction.user.id);
+      await interaction.reply(privateReplyPayload(interaction, {
+        content: formatPersonalWatchList(userState)
+      }));
+      return;
+    }
+
+    if (interaction.commandName === "events" || interaction.commandName === "arcevents") {
+      await showEvents(interaction);
+      return;
+    }
+
+    if (interaction.commandName === "map") {
+      const map = interaction.options.getString("map", true);
+      await showEvents(interaction, map);
+      return;
+    }
 
     if (interaction.commandName === "arcsetup") {
       const channel = interaction.options.getChannel("channel", true);
@@ -460,7 +876,7 @@ client.on("interactionCreate", async interaction => {
         await interaction.reply({
           ephemeral: true,
           content:
-            `Added watch **#${watch.id}** for **${event}**` +
+            `Added server watch **#${watch.id}** for **${event}**` +
             `${map !== "ANY" ? ` on **${map}**` : " on **Any map**"} ` +
             `(${minutes === 0 ? "active-now" : `${minutes} min before`}).`
         });
@@ -478,8 +894,8 @@ client.on("interactionCreate", async interaction => {
         await interaction.reply({
           ephemeral: true,
           content: before === guildState.watches.length
-            ? `No watch found with ID **#${id}**.`
-            : `Removed watch **#${id}**.`
+            ? `No server watch found with ID **#${id}**.`
+            : `Removed server watch **#${id}**.`
         });
 
         return;
@@ -488,22 +904,15 @@ client.on("interactionCreate", async interaction => {
       if (sub === "list") {
         await interaction.reply({
           ephemeral: true,
-          content: formatWatchList(guildState)
+          content: formatServerWatchList(guildState)
         });
 
         return;
       }
     }
 
-    if (interaction.commandName === "arcevents") {
-      const privateReply = interaction.options.getBoolean("private") ?? false;
-      const eventFilter = interaction.options.getString("event") || null;
-      const mapFilter = interaction.options.getString("map") || null;
-
-      await interaction.deferReply({ ephemeral: privateReply });
-
-      const events = filterEvents(await getEvents(), eventFilter, mapFilter);
-      await interaction.editReply(buildBoardPayload(events));
+    if (interaction.commandName === "arcnotify") {
+      await handleArcNotify(interaction);
       return;
     }
 

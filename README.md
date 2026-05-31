@@ -1,112 +1,93 @@
 # ARC Raiders Event Bot
 
-A small Discord bot for ARC Raiders event tracking.
+A small Discord bot for ARC Raiders event alerts.
 
-It posts an ARCTracker-style event board in a Discord channel and lets server administrators configure alerts for specific events like **Lush Blooms**, **Matriarch**, **Night Raid**, or **Electromagnetic Storm**.
+Pick the events you care about, like **Lush Blooms**, **Matriarch**, **Night Raid**, or **Electromagnetic Storm**, and get alerts before they start.
 
-The bot is made for servers that only want pings for the events they care about, instead of every event.
+Made by **Sic4rioDragon**.
 
 ## Features
 
-- Live ARC Raiders event board
-- Configurable event alerts
-- Event name autocomplete in slash commands
-- Optional map filter per alert
-- Optional role ping per alert
-- Admin-only commands
-- Public-bot friendly setup
-- No privileged Discord gateway intents needed
+- Personal DM alerts with `/notify`
+- Server event board
+- Server alerts with optional role pings
+- Event search/autocomplete
+- Optional map filters
+- Admin-only server setup
+- User install support
 - Local JSON storage
+- No privileged Discord intents needed
 
 ## Commands
 
-### `/arcsetup`
+### For everyone
 
-Sets the Discord channel where the event board and alerts will be posted.
+```txt
+/help
+/events
+/map
+/notify
+/mynotifications
+/arcnotify remove
+/arcnotify clear
+/arcnotify test
+````
 
-Example:
+### For server admins
+
+```txt
+/arcsetup
+/arcwatch add
+/arcwatch list
+/arcwatch remove
+/arcrefresh
+```
+
+## Quick examples
+
+Personal alert:
+
+```txt
+/notify event:Lush Blooms map:Any map minutes:15
+```
+
+View your alerts:
+
+```txt
+/mynotifications
+```
+
+Server event board:
 
 ```txt
 /arcsetup channel:#arc-events
-````
-
-### `/arcwatch add`
-
-Adds a watched event.
-
-Example:
-
-```txt
-/arcwatch add event:Lush Blooms map:Any map minutes:15 role:@ARC Raiders
 ```
 
-The `event` option supports autocomplete. Start typing and pick the event from the dropdown.
-
-Options:
-
-* `event` - event to watch
-* `map` - optional map filter
-* `minutes` - when to notify before the event starts
-* `role` - optional role to ping
-
-### `/arcwatch list`
-
-Shows all configured watches for the server.
-
-### `/arcwatch remove`
-
-Removes a watch by ID.
-
-Example:
+Server alert with a role ping:
 
 ```txt
-/arcwatch remove id:1
+/arcwatch add event:Matriarch map:Any map minutes:30 role:@ARC Raiders
 ```
-
-### `/arcevents`
-
-Shows current and upcoming events.
-
-Optional filters:
-
-* `event`
-* `map`
-* `private`
-
-### `/arcrefresh`
-
-Forces the event board to refresh.
-
-## Requirements
-
-* Node.js 18 or newer
-* A Discord bot application
-* A Discord bot token
 
 ## Setup
 
-### 1. Clone the repo
+You need:
+
+* Node.js 18 or newer
+* A Discord bot token
+
+Clone the repo:
 
 ```bash
 git clone https://github.com/Sic4rioDragon/arc-raiders-event-bot.git
 cd arc-raiders-event-bot
 ```
 
-### 2. Install dependencies
-
-Windows:
+Install dependencies:
 
 ```bat
 setup.bat
 ```
-
-Or manually:
-
-```bash
-npm install
-```
-
-### 3. Create `.env`
 
 Copy:
 
@@ -126,8 +107,6 @@ Then add your bot token:
 DISCORD_TOKEN=your_bot_token_here
 ```
 
-### 4. Create `config.json`
-
 Copy:
 
 ```txt
@@ -140,24 +119,35 @@ to:
 config.json
 ```
 
-Fill in your Discord application client ID:
+Then add your Discord application client ID:
 
 ```json
 {
-  "clientId": "your_client_id_here"
+  "clientId": "your_client_id_here",
+  "developmentGuildId": ""
 }
 ```
 
-### 5. Invite the bot
+Leave `developmentGuildId` empty for the public/global bot.
 
-Use these scopes:
+For testing, you can put one server ID into `developmentGuildId` so slash commands update faster.
+
+Start the bot:
+
+```bat
+start.bat
+```
+
+## Discord install settings
+
+For server install, use:
 
 ```txt
 bot
 applications.commands
 ```
 
-Recommended bot permissions:
+Recommended permissions:
 
 ```txt
 View Channel
@@ -172,54 +162,28 @@ Permission integer:
 84992
 ```
 
-### 6. Start the bot
-
-Windows:
-
-```bat
-start.bat
-```
-
-Or manually:
-
-```bash
-npm start
-```
-
-### 7. Configure it in Discord
-
-Run:
+For user install, enable **User Install** in the Discord Developer Portal and use:
 
 ```txt
-/arcsetup channel:#arc-events
+applications.commands
 ```
 
-Then add watches:
-
-```txt
-/arcwatch add event:Lush Blooms map:Any map minutes:15 role:@ARC Raiders
-/arcwatch add event:Matriarch map:Any map minutes:30 role:@ARC Raiders
-/arcwatch add event:Electromagnetic Storm map:Dam Battlegrounds minutes:10 role:@ARC Raiders
-```
-
-## Public hosting notes
-
-For a public bot, leave this empty in `config.json`:
-
-```json
-"developmentGuildId": ""
-```
-
-The bot does not need Message Content intent or Server Members intent.
-
-Commands are admin-only by default and also checked in code.
+User install is for personal `/notify` alerts. It does not change server settings.
 
 ## Data storage
 
-Server setup, board message IDs, watch rules, and sent alert history are stored locally in:
+Settings, alerts, board message IDs, and sent alert history are stored in:
 
 ```txt
 ./data/state.json
 ```
 
-Do not delete this file unless you want to reset all server configurations.
+Do not delete this file unless you want to reset the bot data.
+
+## Support
+
+Support server:
+
+```txt
+https://discord.gg/gaJzGPSkZu
+```

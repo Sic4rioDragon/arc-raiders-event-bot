@@ -1,7 +1,7 @@
 {
   "name": "arc-raiders-event-bot",
-  "version": "0.1.0",
-  "description": "Discord event notifier for ARC Raiders map events.",
+  "version": "0.1.1",
+  "description": "Discord event notifier for ARC Raiders.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

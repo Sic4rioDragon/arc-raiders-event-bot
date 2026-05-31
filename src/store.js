@@ -6,7 +6,8 @@ import { CFG } from "./config.js";
 const DATA_FILE = CFG.dataFile || "./data/state.json";
 
 const DEFAULT_STATE = {
-  guilds: {}
+  guilds: {},
+  users: {}
 };
 
 function ensureDir(filePath) {
@@ -29,7 +30,8 @@ export function loadState() {
     return {
       ...DEFAULT_STATE,
       ...parsed,
-      guilds: parsed.guilds || {}
+      guilds: parsed.guilds || {},
+      users: parsed.users || {}
     };
   } catch {
     const backup = `${DATA_FILE}.broken-${Date.now()}`;
@@ -64,13 +66,35 @@ export function getGuildState(state, guildId) {
   return state.guilds[id];
 }
 
-export function cleanupOldAlerts(guildState) {
+export function getUserState(state, userId) {
+  const id = String(userId);
+
+  if (!state.users[id]) {
+    state.users[id] = {
+      watches: [],
+      sentAlerts: {},
+      nextWatchId: 1,
+      dmFailures: 0,
+      lastDmFailureAt: null
+    };
+  }
+
+  if (!state.users[id].sentAlerts) state.users[id].sentAlerts = {};
+  if (!state.users[id].watches) state.users[id].watches = [];
+  if (!state.users[id].nextWatchId) state.users[id].nextWatchId = 1;
+  if (!Number.isFinite(state.users[id].dmFailures)) state.users[id].dmFailures = 0;
+  if (!state.users[id].lastDmFailureAt) state.users[id].lastDmFailureAt = null;
+
+  return state.users[id];
+}
+
+export function cleanupOldAlerts(targetState) {
   const now = Date.now();
   const maxAge = 72 * 60 * 60 * 1000;
 
-  for (const [key, sentAt] of Object.entries(guildState.sentAlerts || {})) {
+  for (const [key, sentAt] of Object.entries(targetState.sentAlerts || {})) {
     if (!sentAt || now - Number(sentAt) > maxAge) {
-      delete guildState.sentAlerts[key];
+      delete targetState.sentAlerts[key];
     }
   }
 }
