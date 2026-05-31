@@ -1,0 +1,34 @@
+{
+  "clientId": "PUT_APPLICATION_CLIENT_ID_HERE",
+
+  "pollSeconds": 60,
+  "dataFile": "./data/state.json",
+
+  "defaultAlertMinutes": 15,
+
+  "links": {
+    "mapEvents": "https://metaforge.app/arc-raiders/event-timers"
+  },
+
+  "maps": [
+    "Dam Battlegrounds",
+    "Spaceport",
+    "Buried City",
+    "Blue Gate",
+    "Stella Montis",
+    "Riven Tides"
+  ],
+
+  "events": [
+    "Lush Blooms",
+    "Electromagnetic Storm",
+    "Hurricane",
+    "Night Raid",
+    "Matriarch",
+    "Harvester",
+    "Uncovered Caches",
+    "Husk Graveyard",
+    "Beachcombing",
+    "Close Scrutiny"
+  ]
+}

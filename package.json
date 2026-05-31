@@ -1,0 +1,14 @@
+{
+  "name": "arc-raiders-event-bot",
+  "version": "0.1.0",
+  "description": "Discord event notifier for ARC Raiders map events.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.4.7"
+  }
+}

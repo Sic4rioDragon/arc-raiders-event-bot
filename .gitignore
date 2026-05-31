@@ -1,0 +1,6 @@
+.env
+*.zip
+/node_modules
+package-lock.json
+/data
+config.json
